@@ -74,77 +74,79 @@
     const timestamp = document.getElementById('timestamp');
     const feed = document.getElementById('feed');
 
-    // 1. LOAD SAVED DATA
     window.onload = () => {
         const savedUrls = localStorage.getItem('multi_gist_urls');
         const savedToken = localStorage.getItem('gh_token');
-        
         if (savedUrls) urlInput.value = savedUrls;
         if (savedToken) tokenInput.value = savedToken;
-
         if (savedUrls) fetchAllGists();
     };
 
-    // 2. TOGGLE TOKEN VISIBILITY
     function toggleToken() {
         tokenInput.type = tokenInput.type === "password" ? "text" : "password";
     }
 
-    // 3. SAVE AND TRIGGER
     function saveAndFetch() {
         localStorage.setItem('multi_gist_urls', urlInput.value.trim());
         localStorage.setItem('gh_token', tokenInput.value.trim());
         fetchAllGists();
     }
 
-    // 4. MAIN FETCH LOGIC
     async function fetchAllGists() {
         const urls = urlInput.value.split('\n').map(u => u.trim()).filter(u => u.length > 0);
         const token = tokenInput.value.trim();
-        
         if (urls.length === 0) return;
         
-        status.innerText = "Syncing all groups...";
+        status.innerText = "Syncing...";
         let allPosts = [];
-
-        // Prepare Headers
         const headers = { 'Accept': 'application/vnd.github.v3+json' };
-        if (token) {
-            headers['Authorization'] = `token ${token}`;
-        }
+        if (token) headers['Authorization'] = `token ${token}`;
 
         try {
-            const fetchPromises = urls.map(async (url) => {
-                const idMatch = url.match(/posts_(\d+)/);
-                const extractedGroupId = idMatch ? idMatch[1] : null;
+            for (const url of urls) {
+                // Fetch the Gist metadata
+                const response = await fetch(`${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`, { headers });
+                const gistData = await response.json();
 
-                // Fetch with auth headers and cache-busting
-                const response = await fetch(`${url}?t=${Date.now()}`, { headers });
-                
-                if (!response.ok) {
-                    throw new Error(`GitHub returned ${response.status}`);
+                // Check if this is a Gist API response (contains a 'files' object)
+                if (gistData.files) {
+                    Object.keys(gistData.files).forEach(fileName => {
+                        const file = gistData.files[fileName];
+                        
+                        // Only process .json files
+                        if (fileName.endsWith('.json')) {
+                            try {
+                                // Extract Group ID from filename (e.g., posts_12345.json -> 12345)
+                                const groupIdMatch = fileName.match(/posts_(.+)\.json/);
+                                const groupId = groupIdMatch ? groupIdMatch[1] : "unknown";
+
+                                // Parse the 'content' string into a real array
+                                const posts = JSON.parse(file.content);
+                                
+                                if (Array.isArray(posts)) {
+                                    posts.forEach(p => allPosts.push({ ...p, groupId }));
+                                }
+                            } catch (e) {
+                                console.warn(`Could not parse file: ${fileName}`, e);
+                            }
+                        }
+                    });
+                } else if (Array.isArray(gistData)) {
+                    // Fallback for Raw URLs that return direct arrays
+                    allPosts.push(...gistData);
                 }
+            }
 
-                const posts = await response.json();
-
-                return posts.map(post => ({
-                    ...post,
-                    groupId: post.groupId || extractedGroupId
-                }));
-            });
-
-            const results = await Promise.all(fetchPromises);
-            allPosts = results.flat();
-
+            // Sort by newest first
             allPosts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
             renderPosts(allPosts);
-            status.innerText = `Connected • ${allPosts.length} posts total ${token ? '(Authenticated)' : '(Guest)'}`;
+            
+            status.innerText = `Connected • ${allPosts.length} posts from ${urls.length} source(s)`;
             status.style.color = "green";
             timestamp.innerText = `Last sync: ${new Date().toLocaleTimeString()}`;
         } catch (err) {
             console.error(err);
-            status.innerText = "Sync Error: Check token or URLs";
+            status.innerText = "Sync Error: Check Console";
             status.style.color = "red";
         }
     }
@@ -152,7 +154,7 @@
     function renderPosts(posts) {
         feed.innerHTML = ''; 
         if (posts.length === 0) {
-            feed.innerHTML = "<div style='text-align:center'>No posts found.</div>";
+            feed.innerHTML = "<div style='padding:20px; text-align:center;'>No posts found. Ensure filenames start with 'posts_'.</div>";
             return;
         }
 
@@ -163,17 +165,15 @@
             const fbUrl = `https://www.facebook.com/groups/${post.groupId}/posts/${post.id}/`;
 
             const imagesHtml = (post.images || []).map(src => `
-                <a href="${src}" target="_blank"><img src="${src}" loading="lazy"></a>
+                <a href="${src}" target="_blank"><img src="${src}" loading="lazy" onerror="this.style.display='none'"></a>
             `).join('');
 
             card.innerHTML = `
                 <div class="post-meta">
-                    <span>ID: <span class="badge">${post.id}</span></span>
+                    <span>Group: <span class="badge">${post.groupId}</span></span>
                     <div>
                         <span style="margin-right:10px;">${postDate}</span>
-                        <a href="${fbUrl}" target="_blank" style="color: #1877f2; text-decoration: none; font-weight: bold;">
-                            View on Facebook ↗
-                        </a>
+                        <a href="${fbUrl}" target="_blank" style="color: #1877f2; text-decoration: none; font-weight: bold;">View ↗</a>
                     </div>
                 </div>
                 <div class="post-text">${post.text || ""}</div>
@@ -183,11 +183,12 @@
         });
     }
 
+    // Auto-refresh every 60 seconds
     setInterval(() => {
         if (document.visibilityState === 'visible' && urlInput.value.trim()) {
             fetchAllGists();
         }
-    }, 30000);
+    }, 60000);
 </script>
 
 </body>
