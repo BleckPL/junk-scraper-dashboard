@@ -25,6 +25,14 @@
         
         .status-bar { font-size: 13px; color: #65676b; }
         .badge { background: #e4e6eb; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+
+        .post-meta a:hover {
+            text-decoration: underline !important;
+        }
+        .post-meta div {
+            display: flex;
+            align-items: center;
+        }
     </style>
 </head>
 <body>
@@ -66,27 +74,36 @@
     async function fetchAllGists() {
         const urls = urlInput.value.split('\n').map(u => u.trim()).filter(u => u.length > 0);
         if (urls.length === 0) return;
-
+    
         status.innerText = "Syncing all groups...";
         let allPosts = [];
-
+    
         try {
-            // Fetch all URLs at the same time for speed
-            const fetchPromises = urls.map(url => 
-                fetch(`${url}?t=${Date.now()}`).then(res => res.json())
-            );
-
+            const fetchPromises = urls.map(async (url) => {
+                // 1. Extract Group ID from the URL filename
+                // This looks for 'posts_', captures digits, and stops at '.json'
+                const idMatch = url.match(/posts_(\d+)\.json/);
+                const extractedGroupId = idMatch ? idMatch[1] : null;
+    
+                const response = await fetch(`${url}?t=${Date.now()}`);
+                const posts = await response.json();
+    
+                // 2. Inject the extracted Group ID into every post object from this file
+                return posts.map(post => ({
+                    ...post,
+                    groupId: post.groupId || extractedGroupId // Use file ID as fallback
+                }));
+            });
+    
             const results = await Promise.all(fetchPromises);
-            
-            // Combine all arrays into one
             allPosts = results.flat();
-
-            // SORT BY TIMESTAMP (Newest First)
-            allPosts.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-
+    
+            // Sort by timestamp
+            allPosts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
             renderPosts(allPosts);
             status.innerText = `Connected • ${allPosts.length} posts total`;
-            timestamp.innerText = `Auto-refreshing in 30s... (${new Date().toLocaleTimeString()})`;
+            timestamp.innerText = `Last sync: ${new Date().toLocaleTimeString()}`;
         } catch (err) {
             console.error(err);
             status.innerText = "Error fetching one or more Gists";
@@ -99,22 +116,30 @@
             feed.innerHTML = "<div style='text-align:center'>No posts found.</div>";
             return;
         }
-
+    
         posts.forEach(post => {
             const card = document.createElement('div');
             card.className = 'post-card';
             
-            // Format the date nicely
             const postDate = post.timestamp ? new Date(post.timestamp).toLocaleString() : "Unknown date";
             
+            // Generate the direct Facebook URL
+            // Fallback: If groupId isn't in the object, you can hardcode a default or handle it gracefully
+            const fbUrl = `https://www.facebook.com/groups/${post.groupId}/posts/${post.id}/`;
+    
             const imagesHtml = (post.images || []).map(src => `
                 <a href="${src}" target="_blank"><img src="${src}" loading="lazy"></a>
             `).join('');
-
+    
             card.innerHTML = `
                 <div class="post-meta">
                     <span>ID: <span class="badge">${post.id}</span></span>
-                    <span>${postDate}</span>
+                    <div>
+                        <span style="margin-right:10px;">${postDate}</span>
+                        <a href="${fbUrl}" target="_blank" style="color: #1877f2; text-decoration: none; font-weight: bold;">
+                            View on Facebook ↗
+                        </a>
+                    </div>
                 </div>
                 <div class="post-text">${post.text || ""}</div>
                 <div class="image-grid">${imagesHtml}</div>
