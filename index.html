@@ -9,9 +9,17 @@
         .container { max-width: 900px; margin: 0 auto; }
         
         .config-panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        
+        /* Token and URL input styling */
+        .input-wrapper { margin-bottom: 15px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 14px; }
+        
         textarea { width: 100%; height: 80px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; outline: none; font-family: monospace; font-size: 12px; box-sizing: border-box; resize: vertical; }
         
-        .controls { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+        .token-row { display: flex; gap: 10px; align-items: center; }
+        input[type="password"], input[type="text"].token-input { flex-grow: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; }
+
+        .controls { display: flex; justify-content: space-between; align-items: center; margin-top: 15px; border-top: 1px solid #f0f2f5; pt: 15px; padding-top: 15px; }
         button { padding: 10px 25px; background: #1877f2; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
         button:hover { background: #166fe5; }
         
@@ -26,26 +34,33 @@
         .status-bar { font-size: 13px; color: #65676b; }
         .badge { background: #e4e6eb; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
 
-        .post-meta a:hover {
-            text-decoration: underline !important;
-        }
-        .post-meta div {
-            display: flex;
-            align-items: center;
-        }
+        .post-meta a:hover { text-decoration: underline !important; }
+        .post-meta div { display: flex; align-items: center; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <div class="config-panel">
-        <label style="font-weight: bold;">Gist Raw URLs (One per line):</label>
-        <textarea id="urlInput" placeholder="Paste multiple raw Gist URLs here..."></textarea>
+        <div class="input-wrapper">
+            <label>GitHub Personal Access Token (PAT):</label>
+            <div class="token-row">
+                <input type="password" id="tokenInput" class="token-input" placeholder="ghp_xxxxxxxxxxxx">
+                <button onclick="toggleToken()" style="background: #e4e6eb; color: #050505; padding: 10px 15px;">👁</button>
+            </div>
+            <small style="color: #65676b;">Adding a token increases your rate limit to 5,000 requests/hr.</small>
+        </div>
+
+        <div class="input-wrapper">
+            <label>Gist Raw URLs (One per line):</label>
+            <textarea id="urlInput" placeholder="https://gist.githubusercontent.com/.../raw/posts_xxx.json"></textarea>
+        </div>
+
         <div class="controls">
             <div class="status-bar">
                 <span id="status">Ready</span> • <span id="timestamp"></span>
             </div>
-            <button onclick="saveAndFetch()">Sync Now</button>
+            <button onclick="saveAndFetch()">Save & Sync</button>
         </div>
     </div>
 
@@ -54,59 +69,83 @@
 
 <script>
     const urlInput = document.getElementById('urlInput');
+    const tokenInput = document.getElementById('tokenInput');
     const status = document.getElementById('status');
     const timestamp = document.getElementById('timestamp');
     const feed = document.getElementById('feed');
 
+    // 1. LOAD SAVED DATA
     window.onload = () => {
         const savedUrls = localStorage.getItem('multi_gist_urls');
-        if (savedUrls) {
-            urlInput.value = savedUrls;
-            fetchAllGists();
-        }
+        const savedToken = localStorage.getItem('gh_token');
+        
+        if (savedUrls) urlInput.value = savedUrls;
+        if (savedToken) tokenInput.value = savedToken;
+
+        if (savedUrls) fetchAllGists();
     };
 
+    // 2. TOGGLE TOKEN VISIBILITY
+    function toggleToken() {
+        tokenInput.type = tokenInput.type === "password" ? "text" : "password";
+    }
+
+    // 3. SAVE AND TRIGGER
     function saveAndFetch() {
         localStorage.setItem('multi_gist_urls', urlInput.value.trim());
+        localStorage.setItem('gh_token', tokenInput.value.trim());
         fetchAllGists();
     }
 
+    // 4. MAIN FETCH LOGIC
     async function fetchAllGists() {
         const urls = urlInput.value.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+        const token = tokenInput.value.trim();
+        
         if (urls.length === 0) return;
-    
+        
         status.innerText = "Syncing all groups...";
         let allPosts = [];
-    
+
+        // Prepare Headers
+        const headers = { 'Accept': 'application/vnd.github.v3+json' };
+        if (token) {
+            headers['Authorization'] = `token ${token}`;
+        }
+
         try {
             const fetchPromises = urls.map(async (url) => {
-                // 1. Extract Group ID from the URL filename
-                // This looks for 'posts_', captures digits, and stops at '.json'
-                const idMatch = url.match(/posts_(\d+)\.json/);
+                const idMatch = url.match(/posts_(\d+)/);
                 const extractedGroupId = idMatch ? idMatch[1] : null;
-    
-                const response = await fetch(`${url}?t=${Date.now()}`);
+
+                // Fetch with auth headers and cache-busting
+                const response = await fetch(`${url}?t=${Date.now()}`, { headers });
+                
+                if (!response.ok) {
+                    throw new Error(`GitHub returned ${response.status}`);
+                }
+
                 const posts = await response.json();
-    
-                // 2. Inject the extracted Group ID into every post object from this file
+
                 return posts.map(post => ({
                     ...post,
-                    groupId: post.groupId || extractedGroupId // Use file ID as fallback
+                    groupId: post.groupId || extractedGroupId
                 }));
             });
-    
+
             const results = await Promise.all(fetchPromises);
             allPosts = results.flat();
-    
-            // Sort by timestamp
+
             allPosts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    
+
             renderPosts(allPosts);
-            status.innerText = `Connected • ${allPosts.length} posts total`;
+            status.innerText = `Connected • ${allPosts.length} posts total ${token ? '(Authenticated)' : '(Guest)'}`;
+            status.style.color = "green";
             timestamp.innerText = `Last sync: ${new Date().toLocaleTimeString()}`;
         } catch (err) {
             console.error(err);
-            status.innerText = "Error fetching one or more Gists";
+            status.innerText = "Sync Error: Check token or URLs";
+            status.style.color = "red";
         }
     }
 
@@ -116,21 +155,17 @@
             feed.innerHTML = "<div style='text-align:center'>No posts found.</div>";
             return;
         }
-    
+
         posts.forEach(post => {
             const card = document.createElement('div');
             card.className = 'post-card';
-            
             const postDate = post.timestamp ? new Date(post.timestamp).toLocaleString() : "Unknown date";
-            
-            // Generate the direct Facebook URL
-            // Fallback: If groupId isn't in the object, you can hardcode a default or handle it gracefully
             const fbUrl = `https://www.facebook.com/groups/${post.groupId}/posts/${post.id}/`;
-    
+
             const imagesHtml = (post.images || []).map(src => `
                 <a href="${src}" target="_blank"><img src="${src}" loading="lazy"></a>
             `).join('');
-    
+
             card.innerHTML = `
                 <div class="post-meta">
                     <span>ID: <span class="badge">${post.id}</span></span>
@@ -148,11 +183,11 @@
         });
     }
 
-    // AUTO-REFRESH EVERY 30 SECONDS
     setInterval(() => {
-        fetchAllGists();
+        if (document.visibilityState === 'visible' && urlInput.value.trim()) {
+            fetchAllGists();
+        }
     }, 30000);
-
 </script>
 
 </body>
