@@ -62,52 +62,41 @@
         const savedUrls = localStorage.getItem('multi_gist_urls');
         if (savedUrls) {
             urlInput.value = savedUrls;
-            fetchAllGists();
+            fetchMasterGist();
         }
     };
 
     function saveAndFetch() {
         localStorage.setItem('multi_gist_urls', urlInput.value.trim());
-        fetchAllGists();
+        fetchMasterGist();
     }
 
-    async function fetchAllGists() {
-        const urls = urlInput.value.split('\n').map(u => u.trim()).filter(u => u.length > 0);
-        if (urls.length === 0) return;
-    
-        status.innerText = "Syncing all groups...";
+    async function fetchMasterGist(gistId) {
+        // 1. Fetch the Gist metadata from the API
+        const response = await fetch(`https://api.github.com/gists/${gistId}`);
+        const gistData = await response.json();
+        
         let allPosts = [];
     
-        try {
-            const fetchPromises = urls.map(async (url) => {
-                // 1. Extract Group ID from the URL filename
-                // This looks for 'posts_', captures digits, and stops at '.json'
-                const idMatch = url.match(/posts_(\d+)\.json/);
-                const extractedGroupId = idMatch ? idMatch[1] : null;
+        // 2. Loop through all files in that Gist
+        for (const [filename, fileInfo] of Object.entries(gistData.files)) {
+            if (filename.startsWith('posts_')) {
+                const idMatch = filename.match(/posts_(\d+)/);
+                const groupId = idMatch ? idMatch[1] : null;
     
-                const response = await fetch(`${url}?t=${Date.now()}`);
-                const posts = await response.json();
+                // 3. Fetch the content of this specific file
+                const postResponse = await fetch(fileInfo.raw_url + `?t=${Date.now()}`);
+                const posts = await postResponse.json();
     
-                // 2. Inject the extracted Group ID into every post object from this file
-                return posts.map(post => ({
-                    ...post,
-                    groupId: post.groupId || extractedGroupId // Use file ID as fallback
-                }));
-            });
-    
-            const results = await Promise.all(fetchPromises);
-            allPosts = results.flat();
-    
-            // Sort by timestamp
-            allPosts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    
-            renderPosts(allPosts);
-            status.innerText = `Connected • ${allPosts.length} posts total`;
-            timestamp.innerText = `Last sync: ${new Date().toLocaleTimeString()}`;
-        } catch (err) {
-            console.error(err);
-            status.innerText = "Error fetching one or more Gists";
+                // Add the Group ID to the posts
+                const postsWithId = posts.map(p => ({ ...p, groupId }));
+                allPosts = allPosts.concat(postsWithId);
+            }
         }
+    
+        // 4. Sort and Render
+        allPosts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        renderPosts(allPosts);
     }
 
     function renderPosts(posts) {
@@ -150,7 +139,7 @@
 
     // AUTO-REFRESH EVERY 30 SECONDS
     setInterval(() => {
-        fetchAllGists();
+        fetchMasterGist();
     }, 30000);
 
 </script>
