@@ -3,69 +3,102 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multi-Group Scraper Dashboard</title>
+    <title>Multi-Group Board Dashboard</title>
     <style>
-        body { font-family: -apple-system, system-ui, sans-serif; background: #f0f2f5; padding: 20px; color: #1c1e21; }
-        .container { max-width: 900px; margin: 0 auto; }
+        body { font-family: -apple-system, system-ui, sans-serif; background: #f0f2f5; margin: 0; color: #1c1e21; height: 100vh; display: flex; flex-direction: column; }
+        
+        .header-area { padding: 20px; flex-shrink: 0; }
+        .container { max-width: 1200px; margin: 0 auto; width: 100%; }
         
         .config-panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        
-        /* Token and URL input styling */
         .input-wrapper { margin-bottom: 15px; }
         label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 14px; }
-        
-        textarea { width: 100%; height: 80px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; outline: none; font-family: monospace; font-size: 12px; box-sizing: border-box; resize: vertical; }
+        textarea { width: 100%; height: 60px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; outline: none; font-family: monospace; font-size: 12px; box-sizing: border-box; resize: vertical; }
         
         .token-row { display: flex; gap: 10px; align-items: center; }
         input[type="password"], input[type="text"].token-input { flex-grow: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; }
 
-        .controls { display: flex; justify-content: space-between; align-items: center; margin-top: 15px; border-top: 1px solid #f0f2f5; pt: 15px; padding-top: 15px; }
+        .controls { display: flex; justify-content: space-between; align-items: center; margin-top: 15px; border-top: 1px solid #f0f2f5; padding-top: 15px; }
         button { padding: 10px 25px; background: #1877f2; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        button:hover { background: #166fe5; }
         
-        .post-card { background: white; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); border: 1px solid #ddd; position: relative; }
-        .post-meta { display: flex; justify-content: space-between; color: #65676b; font-size: 11px; margin-bottom: 8px; border-bottom: 1px solid #f0f2f5; padding-bottom: 5px; }
-        .post-text { margin: 10px 0; white-space: pre-wrap; line-height: 1.5; font-size: 15px; }
+        /* --- COLUMN LAYOUT ENGINE --- */
+        #feed { 
+            display: flex; 
+            flex-direction: row; 
+            gap: 20px; 
+            overflow-x: auto; 
+            padding: 0 20px 20px 20px; 
+            flex-grow: 1; 
+            align-items: flex-start;
+        }
+
+        .group-column { 
+            min-width: 350px; 
+            max-width: 350px; 
+            background: #ebedf0; 
+            border-radius: 8px; 
+            display: flex; 
+            flex-direction: column; 
+            max-height: 100%; 
+            border: 1px solid #ccd0d5;
+        }
+
+        .column-header { 
+            padding: 15px; 
+            background: #f5f6f7; 
+            border-radius: 8px 8px 0 0; 
+            border-bottom: 1px solid #ddd; 
+            position: sticky; 
+            top: 0; 
+            z-index: 10;
+        }
+
+        .column-scroll-area { 
+            overflow-y: auto; 
+            padding: 10px; 
+            flex-grow: 1;
+        }
+
+        .post-card { background: white; border-radius: 8px; padding: 12px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); border: 1px solid #ddd; }
+        .post-meta { display: flex; justify-content: space-between; color: #65676b; font-size: 11px; margin-bottom: 8px; }
+        .post-text { margin: 8px 0; white-space: pre-wrap; line-height: 1.4; font-size: 13px; max-height: 150px; overflow: hidden; text-overflow: ellipsis; }
         
-        .image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-top: 10px; }
-        .image-grid img { width: 100%; height: 220px; object-fit: cover; border-radius: 6px; border: 1px solid #e4e6eb; transition: transform 0.2s; }
-        .image-grid img:hover { transform: scale(1.02); }
+        .image-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; margin-top: 8px; }
+        .image-grid img { width: 100%; height: 100px; object-fit: cover; border-radius: 4px; }
         
         .status-bar { font-size: 13px; color: #65676b; }
-        .badge { background: #e4e6eb; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
-
-        .post-meta a:hover { text-decoration: underline !important; }
-        .post-meta div { display: flex; align-items: center; }
+        .badge { background: #1877f2; color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <div class="config-panel">
-        <div class="input-wrapper">
-            <label>GitHub Personal Access Token (PAT):</label>
-            <div class="token-row">
-                <input type="password" id="tokenInput" class="token-input" placeholder="ghp_xxxxxxxxxxxx">
-                <button onclick="toggleToken()" style="background: #e4e6eb; color: #050505; padding: 10px 15px;">👁</button>
+<div class="header-area">
+    <div class="container">
+        <div class="config-panel">
+            <div class="input-wrapper">
+                <label>GitHub Personal Access Token (PAT):</label>
+                <div class="token-row">
+                    <input type="password" id="tokenInput" class="token-input" placeholder="ghp_xxxxxxxxxxxx">
+                    <button onclick="toggleToken()" style="background: #e4e6eb; color: #050505; padding: 10px 15px;">👁</button>
+                </div>
             </div>
-            <small style="color: #65676b;">Adding a token increases your rate limit to 5,000 requests/hr.</small>
-        </div>
 
-        <div class="input-wrapper">
-            <label>Gist Raw URLs (One per line):</label>
-            <textarea id="urlInput" placeholder="https://gist.githubusercontent.com/.../raw/posts_xxx.json"></textarea>
-        </div>
-
-        <div class="controls">
-            <div class="status-bar">
-                <span id="status">Ready</span> • <span id="timestamp"></span>
+            <div class="input-wrapper">
+                <label>Gist Raw URLs (One per line):</label>
+                <textarea id="urlInput" placeholder="https://gist.githubusercontent.com/.../raw/posts_xxx.json"></textarea>
             </div>
-            <button onclick="saveAndFetch()">Save & Sync</button>
+
+            <div class="controls">
+                <div class="status-bar">
+                    <span id="status">Ready</span> • <span id="timestamp"></span>
+                </div>
+                <button onclick="saveAndFetch()">Save & Sync Board</button>
+            </div>
         </div>
     </div>
-
-    <div id="feed"></div>
 </div>
+
+<div id="feed"></div>
 
 <script>
     const urlInput = document.getElementById('urlInput');
@@ -97,93 +130,97 @@
         const token = tokenInput.value.trim();
         if (urls.length === 0) return;
         
-        status.innerText = "Syncing...";
+        status.innerText = "Syncing Board...";
         let allPosts = [];
         const headers = { 'Accept': 'application/vnd.github.v3+json' };
         if (token) headers['Authorization'] = `token ${token}`;
 
         try {
             for (const url of urls) {
-                // Fetch the Gist metadata
                 const response = await fetch(`${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`, { headers });
                 const gistData = await response.json();
 
-                // Check if this is a Gist API response (contains a 'files' object)
                 if (gistData.files) {
                     Object.keys(gistData.files).forEach(fileName => {
                         const file = gistData.files[fileName];
-                        
-                        // Only process .json files
                         if (fileName.endsWith('.json')) {
                             try {
-                                // Extract Group ID from filename (e.g., posts_12345.json -> 12345)
                                 const groupIdMatch = fileName.match(/posts_(.+)\.json/);
                                 const groupId = groupIdMatch ? groupIdMatch[1] : "unknown";
-
-                                // Parse the 'content' string into a real array
                                 const posts = JSON.parse(file.content);
-                                
                                 if (Array.isArray(posts)) {
                                     posts.forEach(p => allPosts.push({ ...p, groupId }));
                                 }
-                            } catch (e) {
-                                console.warn(`Could not parse file: ${fileName}`, e);
-                            }
+                            } catch (e) { console.warn(`Parse error: ${fileName}`, e); }
                         }
                     });
-                } else if (Array.isArray(gistData)) {
-                    // Fallback for Raw URLs that return direct arrays
-                    allPosts.push(...gistData);
                 }
             }
 
-            // Sort by newest first
-            allPosts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-            renderPosts(allPosts);
+            renderBoard(allPosts);
             
-            status.innerText = `Connected • ${allPosts.length} posts from ${urls.length} source(s)`;
+            status.innerText = `Connected • ${allPosts.length} posts`;
             status.style.color = "green";
             timestamp.innerText = `Last sync: ${new Date().toLocaleTimeString()}`;
         } catch (err) {
-            console.error(err);
-            status.innerText = "Sync Error: Check Console";
+            status.innerText = "Sync Error";
             status.style.color = "red";
         }
     }
 
-    function renderPosts(posts) {
+    function renderBoard(posts) {
         feed.innerHTML = ''; 
-        if (posts.length === 0) {
-            feed.innerHTML = "<div style='padding:20px; text-align:center;'>No posts found. Ensure filenames start with 'posts_'.</div>";
-            return;
-        }
-
+        
+        // 1. Group the data by groupId
+        const groups = {};
         posts.forEach(post => {
-            const card = document.createElement('div');
-            card.className = 'post-card';
-            const postDate = post.timestamp ? new Date(post.timestamp).toLocaleString() : "Unknown date";
-            const fbUrl = `https://www.facebook.com/groups/${post.groupId}/posts/${post.id}/`;
+            if (!groups[post.groupId]) groups[post.groupId] = [];
+            groups[post.groupId].push(post);
+        });
 
-            const imagesHtml = (post.images || []).map(src => `
-                <a href="${src}" target="_blank"><img src="${src}" loading="lazy" onerror="this.style.display='none'"></a>
-            `).join('');
-
-            card.innerHTML = `
-                <div class="post-meta">
-                    <span>Group: <span class="badge">${post.groupId}</span></span>
-                    <div>
-                        <span style="margin-right:10px;">${postDate}</span>
-                        <a href="${fbUrl}" target="_blank" style="color: #1877f2; text-decoration: none; font-weight: bold;">View ↗</a>
+        // 2. Create columns for each group
+        Object.keys(groups).sort().forEach(groupId => {
+            const groupPosts = groups[groupId].sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
+            const column = document.createElement('div');
+            column.className = 'group-column';
+            
+            column.innerHTML = `
+                <div class="column-header">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <strong style="font-size:16px;">Group ${groupId}</strong>
+                        <span class="badge">${groupPosts.length}</span>
                     </div>
                 </div>
-                <div class="post-text">${post.text || ""}</div>
-                <div class="image-grid">${imagesHtml}</div>
+                <div class="column-scroll-area" id="col-${groupId}"></div>
             `;
-            feed.appendChild(card);
+            
+            feed.appendChild(column);
+            const scrollArea = document.getElementById(`col-${groupId}`);
+
+            groupPosts.forEach(post => {
+                const card = document.createElement('div');
+                card.className = 'post-card';
+                const postDate = post.timestamp ? new Date(post.timestamp).toLocaleDateString() : "---";
+                const fbUrl = `https://www.facebook.com/groups/${post.groupId}/posts/${post.id}/`;
+
+                const imagesHtml = (post.images || []).slice(0, 4).map(src => `
+                    <img src="${src}" loading="lazy" onerror="this.style.display='none'">
+                `).join('');
+
+                card.innerHTML = `
+                    <div class="post-meta">
+                        <span>${postDate}</span>
+                        <a href="${fbUrl}" target="_blank" style="color: #1877f2; text-decoration: none; font-weight: bold;">Link ↗</a>
+                    </div>
+                    <div class="post-text">${post.text || "No text"}</div>
+                    <div class="image-grid">${imagesHtml}</div>
+                `;
+                scrollArea.appendChild(card);
+            });
         });
     }
 
-    // Auto-refresh every 60 seconds
     setInterval(() => {
         if (document.visibilityState === 'visible' && urlInput.value.trim()) {
             fetchAllGists();
