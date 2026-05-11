@@ -99,7 +99,7 @@
             allPosts = results.flat();
     
             // Sort by timestamp
-            allPosts.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            allPosts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     
             renderPosts(allPosts);
             status.innerText = `Connected • ${allPosts.length} posts total`;
