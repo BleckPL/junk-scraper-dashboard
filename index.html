@@ -126,43 +126,57 @@
     }
 
     async function fetchAllGists() {
-        const urls = urlInput.value.split('\n').map(u => u.trim()).filter(u => u.length > 0);
-        const token = tokenInput.value.trim();
-        if (urls.length === 0) return;
+        // We only need the one Web App URL now
+        const webAppUrl = urlInput.value.trim();
+        if (!webAppUrl) return;
         
         status.innerText = "Syncing Board...";
         let allPosts = [];
-        const headers = { 'Accept': 'application/vnd.github.v3+json' };
-        if (token) headers['Authorization'] = `token ${token}`;
-
+    
         try {
-            for (const url of urls) {
-                const response = await fetch(`${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`, { headers });
-                const gistData = await response.json();
-
-                if (gistData.files) {
-                    Object.keys(gistData.files).forEach(fileName => {
-                        const file = gistData.files[fileName];
-                        if (fileName.endsWith('.json')) {
-                            try {
-                                const groupIdMatch = fileName.match(/posts_(.+)\.json/);
-                                const groupId = groupIdMatch ? groupIdMatch[1] : "unknown";
-                                const posts = JSON.parse(file.content);
-                                if (Array.isArray(posts)) {
-                                    posts.forEach(p => allPosts.push({ ...p, groupId }));
-                                }
-                            } catch (e) { console.warn(`Parse error: ${fileName}`, e); }
+            // Fetch everything in one go from your GAS endpoint
+            // Cache busting (t=Date.now()) is still a good idea for Google Scripts
+            const response = await fetch(`${webAppUrl}${webAppUrl.includes('?') ? '&' : '?'}t=${Date.now()}`);
+            
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            
+            const folderData = await response.json();
+    
+            // folderData is now an object: { "filename.json": [...content...], ... }
+            Object.keys(folderData).forEach(fileName => {
+                if (fileName.endsWith('.json')) {
+                    try {
+                        // Extract groupId from fileName using your existing regex
+                        const groupIdMatch = fileName.match(/posts_(.+)\.json/);
+                        const groupId = groupIdMatch ? groupIdMatch[1] : "unknown";
+                        
+                        const posts = folderData[fileName];
+                        
+                        // Since our GAS already does JSON.parse(), 'posts' is likely already an array
+                        // We check if it's an array and merge it
+                        if (Array.isArray(posts)) {
+                            posts.forEach(p => allPosts.push({ ...p, groupId }));
+                        } else if (typeof posts === 'string') {
+                            // Fallback in case GAS sent it as a raw string
+                            const parsedPosts = JSON.parse(posts);
+                            if (Array.isArray(parsedPosts)) {
+                                parsedPosts.forEach(p => allPosts.push({ ...p, groupId }));
+                            }
                         }
-                    });
+                    } catch (e) { 
+                        console.warn(`Parse error: ${fileName}`, e); 
+                    }
                 }
-            }
-
+            });
+    
             renderBoard(allPosts);
             
             status.innerText = `Connected • ${allPosts.length} posts`;
             status.style.color = "green";
             timestamp.innerText = `Last sync: ${new Date().toLocaleTimeString()}`;
+            
         } catch (err) {
+            console.error("Sync Error:", err);
             status.innerText = "Sync Error";
             status.style.color = "red";
         }
